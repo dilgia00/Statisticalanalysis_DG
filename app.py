@@ -64,7 +64,6 @@ def get_letters(df, target, group):
     means = df_clean.groupby(group)[target].mean().sort_values(ascending=False)
     sorted_groups = means.index.tolist()
     
-    # Crea matrice di significatività
     sig_matrix = pd.DataFrame(False, index=sorted_groups, columns=sorted_groups)
     for idx, row in res.iterrows():
         g1, g2 = row['group1'], row['group2']
@@ -76,7 +75,6 @@ def get_letters(df, target, group):
     letters_map = {g: [] for g in sorted_groups}
     current_letter = 'a'
 
-    # Assegnazione raggruppata delle lettere
     for i in range(len(sorted_groups)):
         cluster = [sorted_groups[i]]
         for j in range(i + 1, len(sorted_groups)):
@@ -93,7 +91,6 @@ def get_letters(df, target, group):
                 letters_map[member].append(current_letter)
         current_letter = chr(ord(current_letter) + 1)
     
-    # Pulizia delle lettere ridondanti
     letter_to_groups = {}
     for g, letters in letters_map.items():
         for l in letters:
@@ -113,7 +110,6 @@ def get_letters(df, target, group):
     for g, letters in letters_map.items():
         final_letters[g] = [l for l in letters if l not in letters_to_remove]
         
-    # Rinomina le lettere partendo da 'a' in ordine pulito
     used_letters = set()
     for letters in final_letters.values():
         used_letters.update(letters)
@@ -157,7 +153,7 @@ if uploaded_file is not None:
         st.error(f"Errore caricamento: {e}")
         df_init = pd.DataFrame({"Categoria": ["A", "A", "B", "B"], "Valore": [10, 12, 8, 9]})
 else:
-    # Dati fittizi di esempio basati sul tuo script
+    # Dati fittizi di esempio
     df_init = pd.DataFrame({
         "Materia Prima": ["orange", "orange", "lemon", "lemon", "orange", "lemon"],
         "Tempo di Cottura": [45, 75, 45, 75, 45, 75], 
@@ -207,7 +203,7 @@ if not df.empty:
     st.markdown("---")
     st.header("📈 2. Analisi e Visualizzazione")
     
-    # 5 SCHEDE INVECE DI 3
+    # 5 SCHEDE
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Categoriale (1 Fattore)", 
         "📊 Categoriale Raggruppato (2 Fattori)", 
@@ -288,15 +284,15 @@ if not df.empty:
             st.dataframe(get_stats(df_clean, y_num, x_cat), use_container_width=True)
             st.dataframe(get_tukey(df_clean, y_num, x_cat), use_container_width=True)
 
-
     # ==========================================
-    # TAB 2: ANALISI CATEGORIALE A 2 FATTORI (NUOVO)
+    # TAB 2: ANALISI CATEGORIALE A 2 FATTORI
     # ==========================================
     with tab2:
         st.markdown("👉 **Ideale per:** Confrontare due variabili incrociate (es. Materia Prima x Tempo di Cottura).")
         col_x2, col_h2, col_y2 = st.columns(3)
         with col_x2: x_cat2 = st.selectbox("Asse X (Fattore Principale)", all_cols, key="cat_x2")
-        with col_h2: hue_cat2 = st.selectbox("Colore / Gruppo (Fattore 2)", all_cols, key="cat_h2")
+        # Preveniamo l'errore di visualizzazione mettendo un index di default diverso se ci sono più colonne
+        with col_h2: hue_cat2 = st.selectbox("Colore / Gruppo (Fattore 2)", all_cols, index=1 if len(all_cols)>1 else 0, key="cat_h2")
         with col_y2: y_num2 = st.selectbox("Asse Y (Numerico)", numeric_cols, key="cat_y2")
 
         if y_num2 and x_cat2 and hue_cat2:
@@ -420,14 +416,18 @@ if not df.empty:
             c_sx, c_sy, c_sc, c_ss = st.columns(4)
             with c_sx: sc_x = st.selectbox("Asse X (Num)", numeric_cols, index=0, key="sc_x")
             with c_sy: sc_y = st.selectbox("Asse Y (Num)", numeric_cols, index=1 if len(numeric_cols)>1 else 0, key="sc_y")
-            with c_sc: sc_color = st.selectbox("Fattore Colore", all_cols, key="sc_color")
-            with c_ss: sc_style = st.selectbox("Fattore Forma (Marker)", all_cols, key="sc_style")
+            with c_sc: sc_color = st.selectbox("Fattore Colore", all_cols, index=0, key="sc_color")
+            # Assicuriamoci che di default non scelga la stessa colonna del colore per evitare errori!
+            with c_ss: sc_style = st.selectbox("Fattore Forma (Marker)", all_cols, index=1 if len(all_cols)>1 else 0, key="sc_style")
             
             df_scat = df.dropna(subset=[sc_x, sc_y, sc_color, sc_style])
             
             if not df_scat.empty:
+                # SALVAGENTE: Rimuove duplicati nel caso l'utente scelga volutamente la stessa colonna per Colore e Forma
+                group_cols = list(dict.fromkeys([sc_color, sc_style]))
+                
                 # Aggrega i dati
-                aggr_df = df_scat.groupby([sc_color, sc_style])[[sc_x, sc_y]].agg(['mean', 'std']).reset_index()
+                aggr_df = df_scat.groupby(group_cols)[[sc_x, sc_y]].agg(['mean', 'std']).reset_index()
                 aggr_df.columns = [f"{c[0]}_{c[1]}" if c[1] else c[0] for c in aggr_df.columns]
                 
                 with st.expander("⚙️ Parametri Avanzati"):
@@ -437,13 +437,22 @@ if not df.empty:
                 fig4, ax4 = plt.subplots(figsize=(st_fw, st_fh), dpi=300)
                 
                 color_levels = sorted(aggr_df[sc_color].unique())
-                style_levels = sorted(aggr_df[sc_style].unique())
+                style_levels = sorted(aggr_df[sc_style].unique()) if sc_color != sc_style else color_levels
                 palette_colors = sns.color_palette(palette_choice, len(color_levels))
                 markers = ['o', 'D', 's', '^', 'v', 'p', '*', 'h']
                 
                 for idx_c, c_val in enumerate(color_levels):
                     for idx_s, s_val in enumerate(style_levels):
-                        row = aggr_df[(aggr_df[sc_color] == c_val) & (aggr_df[sc_style] == s_val)]
+                        # Se Colore e Stile sono uguali, traccia solo i punti in cui il valore coincide
+                        if sc_color == sc_style and c_val != s_val:
+                            continue
+                            
+                        # Filtra la riga
+                        if sc_color != sc_style:
+                            row = aggr_df[(aggr_df[sc_color] == c_val) & (aggr_df[sc_style] == s_val)]
+                        else:
+                            row = aggr_df[(aggr_df[sc_color] == c_val)]
+                            
                         if not row.empty:
                             x_m, y_m = row[f"{sc_x}_mean"].values[0], row[f"{sc_y}_mean"].values[0]
                             x_s, y_s = row[f"{sc_x}_std"].values[0], row[f"{sc_y}_std"].values[0]
@@ -453,7 +462,7 @@ if not df.empty:
                             ax4.errorbar(x_m, y_m, xerr=x_s, yerr=y_s, 
                                          fmt=marker_sym, capsize=6, markersize=12, 
                                          color=palette_colors[idx_c], markeredgecolor='black',
-                                         label=f'{c_val} - {s_val}')
+                                         label=f'{c_val}' + (f' - {s_val}' if sc_color != sc_style else ''))
 
                 ax4.set_title(f"Centroidi: {sc_y} vs {sc_x}", fontweight='bold', pad=15)
                 ax4.set_xlabel(sc_x)
@@ -512,4 +521,3 @@ if not df.empty:
                     
 else:
     st.info("La tabella dati è vuota. Inserisci dei dati per visualizzare il grafico.")
-
